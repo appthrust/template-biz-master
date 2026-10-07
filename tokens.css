@@ -1,0 +1,24 @@
+:root {
+  --background: oklch(98% 0.004 160);
+  --foreground: oklch(26% 0.018 160);
+  --color-paper: oklch(100% 0 0);
+  --color-muted: oklch(48% 0.014 160);
+  --color-line: oklch(89% 0.012 160);
+  --color-soft: oklch(96% 0.012 160);
+  --color-accent: oklch(39% 0.072 165);
+  --color-accent-hover: oklch(32% 0.068 165);
+  --color-accent-soft: oklch(93% 0.031 165);
+  --color-danger: oklch(44% 0.17 28);
+  --color-danger-soft: oklch(97% 0.014 28);
+  --color-backdrop: oklch(18% 0.014 160 / 0.4);
+  --font-body: var(--font-geist-sans), "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  --font-display: var(--font-body);
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+}

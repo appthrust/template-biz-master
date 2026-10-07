@@ -1,129 +1,59 @@
-import { Pool } from "pg";
-
-export type DatabaseStatus =
-  | "ready"
-  | "missing-url"
-  | "migration-pending"
-  | "unavailable";
-
-export interface DemoMessage {
-  id: number;
-  body: string;
-  createdAt: string;
-}
-
-export interface DemoDatabaseState {
-  status: DatabaseStatus;
-  databaseUrlPresent: boolean;
-  databaseName?: string;
-  host?: string;
-  messages: DemoMessage[];
-}
+import { Pool, type PoolClient } from "pg";
+import type { HistoryEntry, Master, MasterRow, Values } from "./master";
 
 let pool: Pool | undefined;
 
-function databaseUrl() {
-  return process.env.DATABASE_URL?.trim() ?? "";
-}
-
-function getPool() {
-  const connectionString = databaseUrl();
-  if (!connectionString) {
-    return null;
-  }
-
-  pool ??= new Pool({
-    connectionString,
-    max: 4,
-    idleTimeoutMillis: 10_000,
-    connectionTimeoutMillis: 5_000,
-  });
+export function getPool(): Pool {
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) throw new Error("DATABASE_URL is not configured");
+  pool ??= new Pool({ connectionString, max: 4, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 5_000 });
   return pool;
 }
 
-export async function loadDemoMessages(): Promise<DemoDatabaseState> {
-  const connectionString = databaseUrl();
-  if (!connectionString) {
-    return {
-      status: "missing-url",
-      databaseUrlPresent: false,
-      messages: [],
-    };
-  }
-
-  const parsed = safeDatabaseUrl(connectionString);
-  const client = getPool();
-  if (!client) {
-    return {
-      status: "missing-url",
-      databaseUrlPresent: false,
-      messages: [],
-    };
-  }
-
+export async function transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
   try {
-    const result = await client.query<{
-      id: number;
-      body: string;
-      created_at: string;
-    }>(`
-      SELECT id, body, created_at::text
-      FROM appthrust_demo_messages
-      ORDER BY id DESC
-      LIMIT 8
-    `);
-
-    return {
-      status: "ready",
-      databaseUrlPresent: true,
-      databaseName: parsed.databaseName,
-      host: parsed.host,
-      messages: result.rows.map((row) => ({
-        id: row.id,
-        body: row.body,
-        createdAt: row.created_at,
-      })),
-    };
+    await client.query("BEGIN");
+    const result = await operation(client);
+    await client.query("COMMIT");
+    return result;
   } catch (error) {
-    return {
-      status: databaseTableMissing(error) ? "migration-pending" : "unavailable",
-      databaseUrlPresent: true,
-      databaseName: parsed.databaseName,
-      host: parsed.host,
-      messages: [],
-    };
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
-export async function insertDemoMessage(body: string) {
-  const client = getPool();
-  if (!client) {
-    return;
-  }
-
-  await client.query(
-    "INSERT INTO appthrust_demo_messages (body) VALUES ($1)",
-    [body],
-  );
+export async function listMasters(): Promise<Master[]> {
+  const result = await getPool().query<Master>(`
+    SELECT k.id, k.name, k.fields, COUNT(r.id)::integer AS count
+    FROM master_kinds k LEFT JOIN master_rows r ON r.master_id = k.id
+    GROUP BY k.id ORDER BY k.created_at, k.name
+  `);
+  return result.rows;
 }
 
-function databaseTableMissing(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "42P01"
-  );
+export async function listRows(masterId: string): Promise<MasterRow[]> {
+  const result = await getPool().query<MasterRow>(`
+    SELECT id, values, version, updated_at::text AS "updatedAt"
+    FROM master_rows WHERE master_id = $1 ORDER BY created_at DESC, id
+  `, [masterId]);
+  return result.rows;
 }
 
-function safeDatabaseUrl(connectionString: string) {
-  try {
-    const parsed = new URL(connectionString);
-    return {
-      databaseName: parsed.pathname.replace(/^\//, "") || undefined,
-      host: parsed.hostname || undefined,
-    };
-  } catch {
-    return {};
-  }
+export async function listHistory(masterId: string): Promise<HistoryEntry[]> {
+  const result = await getPool().query<HistoryEntry>(`
+    SELECT id::text, action, actor, created_at::text AS at,
+      before_values AS before, after_values AS after
+    FROM master_history WHERE master_id = $1 ORDER BY id DESC LIMIT 100
+  `, [masterId]);
+  return result.rows;
+}
+
+export async function recordHistory(client: PoolClient, masterId: string, rowId: string | null, action: HistoryEntry["action"], actor: string, before: Values | null, after: Values | null) {
+  await client.query(`
+    INSERT INTO master_history (master_id, row_id, action, actor, before_values, after_values)
+    VALUES ($1, $2, $3, $4, $5, $6)
+  `, [masterId, rowId, action, actor, before === null ? null : JSON.stringify(before), after === null ? null : JSON.stringify(after)]);
 }
