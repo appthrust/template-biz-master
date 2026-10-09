@@ -25,6 +25,7 @@ npm ci
 export DATABASE_URL='postgresql://app:password@localhost:5432/app'
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0002_master.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0003_labels.sql
 npm run dev
 ```
 
@@ -46,6 +47,7 @@ npm run build
 すべての行操作と履歴の書き込みは同じトランザクションで確定します。編集・削除は対象行をロックし、読み込み時の版と違う場合は保存せず再読み込みを案内します。入力はサーバーで必須、有限数値、実在する日付、定義済みの選択肢を再検証します。
 
 `0001_init.sql` は元ひな形のメッセージテーブルを保持する既存履歴です。アプリはそのテーブルを使用しません。マスター用のスキーマは `0002_master.sql` に独立しています。再適用可能なDDLと初期データを使用し、既存マスターを上書きせず、削除済みサンプル行も復元しません。
+`0003_labels.sql` はデータタブに表示する表・列の日本語名をコメントとして設定します。
 
 ## AppThrustでの公開
 
@@ -61,3 +63,4 @@ npm run build
 - `lib/master.ts`：共有する型、項目・値の検証、CSV処理。
 - `lib/db.ts`：`pg`の接続、パラメーター付きクエリ、履歴保存。
 - `db/migrations/0002_master.sql`：スキーマと初期サンプル。
+- `db/migrations/0003_labels.sql`：データタブの表・列の日本語名。
